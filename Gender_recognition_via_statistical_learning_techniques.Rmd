@@ -1,0 +1,370 @@
+---
+title: "Gender recognition via statistical learning techniques"
+author: "Davide Facchinelli"
+output:
+  github_document:
+    html_preview: true
+    pandoc_args: --webtex
+geometry: margin=1.25cm
+linkcolor: cyan
+fontsize: 12pt
+bibliography: Bibliography/library.bib
+nocite: '@*'
+---
+
+```{r, warning=FALSE, message=FALSE}
+library(e1071)
+library(readr)
+library(caret)
+library(kernlab)
+library(rgl)
+library(ggfortify)
+```
+
+# Abstract
+
+Our final aim is to study statistically the human voice, with the objective to be able to differentiate individuals on their gender. We use their voice frequency and sound pressure level, to infer their gender.
+
+It seems very interesting to have a precise statistical model linking the human voice to gender. In the literature there are a lot of interesting observation related to different fields like medicine and speak recognizement, but not a well built model. We build such a model, to do further predictions.
+
+We extracted different features from our data and tested different classical statistical learning models. We finally conclude that the data are separable by a hyperplane. We also did a feature importance analysis, highlighting that the mean of the sound pressure level is an important feature for the classificators to work.
+
+# Introduction
+
+## Background
+
+It is largely know that is possible to recognise individuals we know from their voices. We have also been able to teach to computers to do the same, to a certain degree of success; [see @Grd85]. Doddington also state that the voice frequency is the most useful characteristic to identify the speaker, in particular when linked with the sound pressure level.
+There is also another study, from Krauss, Freyberg and Morsella about how much we are able to infer about the physical appearance of a speaker from the voice: [see @RmkRfEm02].They reach the conclusion that various physical characteristics are inferable by hearing the voice of the speaker, and in particular it is the case of the gender of the speaker. There is also a very deep and complete study on this particular subject by Klatt and Klatt [see @DhkLck90] that highlight the anatomic differences, and how they impact the voices of male and female. Everything suggests that the voice frequency is a very important part of this process of differentiation, and even highlight which component of the voice are important in the process.
+Krauss et al. also shown that there is a correlation between the lowest tone produced and the voice frequency for men, but not for women. From this starting point we hope to find other statistically interesting results.
+Finally Latinus and Belin [see @MlPb10] were able, with an in deep study of voice frequencies, to cluster registered voice from male and female speakers, definitely showing that it is possible, and even with a fairly high degree of success.
+
+## Procedure
+
+We have collected a sample of voice recordings. We extracted sound level and pitch. To do so we cut the registration to have files start precisely at the time the person started to speak and stopped. We used the same phrase to everyone: “La lumaca striscia sui sassi e sul suolo, aiutiamola a raggiungere l’aiuola, senza che il serpente la mangi”. It is conceived to highlight differences between male and female, according to the research papers. We remarked that vowels [see @MlPb10] after the “S” are very significant, therefore we wrote the phrase in this way.
+
+We extract some features to distinguish between male and female: mean, standard deviation, skewness and kurtosis for both pitch and sound level. We also considered the $L^2$ distance between those functions and their correlation.
+
+To do our analysis we applied different classification algorithms: LDA, QDA, naive bayes and different SVM versions. From what we observed the data seems to be divided in a linear fashion, therefore LDA and the classical SVM are the one that works better.
+
+Finally we did a feature importance analysis using the LOCO technique [see @LOCO] to discover which of the above feature is more important for the prediction accuracy.
+
+# Data import
+
+We import the data. As all the registrations start when the user started to read it, and stop when the user stopped reading it, we are going to place them on an equispaced grid on $[0,1]$. We are going to scale the original time ticks. A reader can read at different speeds, but as they read the same phrase placing them in an equispaced grid should bring together similar part of the phrase.
+
+```{r, message=FALSE}
+files <- list.files(path = "Dataset", pattern = "*.csv", full.names = T)
+
+tbl <- sapply(files, read_csv, simplify=FALSE)
+elements = length(tbl)
+
+dfs.list <- list()
+
+sexTracker = vector(length = elements)
+for( i in 1:length(tbl) ){
+  sexTracker[i] = substr(deparse(tbl[i])[1],17,17)
+  toyset_df <- data.frame(Decibel = as.data.frame(tbl[i])[[2]],
+                          Tune = as.data.frame(tbl[i])[[3]],
+                          x = 1:length(as.data.frame(tbl[i])[[2]])/length(as.data.frame(tbl[i])[[2]])
+                          )
+  dfs.list[[i]] <- toyset_df
+}
+
+sexTracker = factor(sexTracker)
+
+rm(tbl,toyset_df,i,files)
+```
+
+Let's give a look to the balance of our set. We will get the percentage of female in our dataset.
+
+```{r}
+length(sexTracker[sexTracker == 'F'])/length(sexTracker)
+```
+
+# Features
+
+## Computation
+
+We extract different features from our coefficients. For each individual we are going to get mean, standard deviation, skewness and kurtosis of each of our two functions for a total of eight features. To this we will add the correlation and the $L^2$ distance for each couple, getting in the end ten features. The distance will be calculated thanks to Parseval's identity: we compute the coefficients in the cosine basis of the difference of our functions and use them to compute the distance.
+
+```{r}
+# vector of method on single function to be used
+to.use = c(mean,sd,skewness,kurtosis)
+
+# function to apply them
+to.usef = function(v){
+  tmp = c()
+  for (i in 1:length(to.use)){
+    tmp = c(tmp, to.use[[i]](v, na.rm = T))
+  }
+  return(tmp)
+}
+
+# function to compute the cosine basis
+cos.basis <- function(x, j.max = length(x)){
+  n = length(x)
+  mat.basis <- matrix(NA, nrow = n, ncol = j.max)
+  mat.basis[,1] <- 1
+  for (j in 2:j.max){
+    mat.basis[,j] = sqrt(2)*cos((j-1)*pi*x)
+  }
+  return(mat.basis)
+}
+
+# function to find the cosine basis distance of two functions
+fundist = function(time, vec1, vec2, prec){
+  f = data.frame(time,vec = vec1-vec2)
+  f = f[complete.cases(f),]
+  b = cos.basis(x = f[,1], j.max = prec)
+  alpha = c(f$vec %*% b / prec)
+  return(sqrt(sum((alpha)^2)))
+}
+
+# number of features
+j.max = length(to.use)*2+2
+
+# matrix of features
+features = matrix(nrow = elements, ncol = j.max)
+
+# name of the columns
+names = c('mean.decibel', 'mean.tune', 'sd.decibel', 'sd.tune', 'skewness.decibel', 'skewness.tune', 'kurtosis.decibel', 'kurtosis.tune','correlation','distance')
+
+# we fill the matrix
+for (i in 1:elements){
+  features[i,] = c(to.usef(dfs.list[[i]]$Decibel),to.usef(dfs.list[[i]]$Tune),cov(x = dfs.list[[i]]$Decibel, y = dfs.list[[i]]$Tune, use = 'complete.obs'),fundist(dfs.list[[i]]$x,dfs.list[[i]]$Decibel,dfs.list[[i]]$Tune,200))
+}
+
+rm(to.use, i, to.usef, cos.basis, fundist)
+```
+
+Now we modify our features matrix scaling it. We divide each feature column by its maximum in absolute value. As some quantity are of order of magnitude different from one another, not doing so will give problems. E.g. computing the distance will highlight some features in particular.
+
+```{r}
+# we build a function to get the maximum of each column of a matrix
+colMax <- function(data){
+  out = c()
+  for (i in 1:ncol(data)){
+    out[i] = max(abs(data[,i]))
+  }
+  return(out)
+}
+# we divide each column by this maximum
+features = features %*% diag(1/colMax(features))
+
+# we add the name at our matrix
+colnames(features) = names
+
+rm(colMax, names)
+```
+
+## Draw
+
+We represent our dataset in two dimension via a PCA projection highlighting where our original axis get projected.
+
+```{r}
+pca = prcomp(features)
+
+autoplot(pca, data = as.data.frame(sexTracker), colour = 'sexTracker', loadings = TRUE,loadings.label = TRUE, loadings.label.size = 3.5)
+```
+
+We can see that our initial dataset is represented with only circa $80\%$ precision in two dimensions. Therefore we think that even if in two dimension is hard to see a separating hyperplane, in higher dimension it will exist.
+
+## Train and test
+
+We split our original dataset in two dataset: train and test. In this way we have a way to test the accuracy of our models.
+
+```{r}
+# we split our dataset in a constant way
+set.seed(20)
+tr_idx <- createDataPartition((1:elements), p = 0.75, list = FALSE)
+
+features.train = features[tr_idx,]
+features.test = features[-tr_idx,]
+
+sexTracker.train = sexTracker[tr_idx]
+sexTracker.test = sexTracker[-tr_idx]
+
+rm(tr_idx)
+```
+
+# Classification analysis
+
+We prepare a pipeline with the caret package to conduct our analysis. We are going to pass in it different classification methods, train them on the train set, and show the confusion table for both the train part and the test part. We will show his accuracy as well.
+
+```{r}
+pipe = function(data, tracker, tester, expected, model, tuning = FALSE, ...) {
+  # we check if it's a model that require some auto-tuning
+  if (tuning) {
+    # in case the answer is yes, we print the use parameter
+    model = train(x = data, y = tracker, method = model, trControl = trainControl(method = 'repeatedcv', number = 10, repeats = 4), ...)
+    show('Best tuning parameter estimated by grid search on 10-fold cross validation with 4 repetition')
+    show(model$bestTune)
+  }
+  else model = train(x = data, y = tracker, method = model, trControl = trainControl(method = 'none'), ...)
+  
+  # we get our predictions
+  model.pred = predict(model, data)
+  model.pred.test = predict(model, tester)
+  
+  
+  # and print the results
+  
+  show('Confusion table of the train set alone')
+  t = table(model.pred,tracker,dnn = c('Predicted','Original'))
+  show(c(Accuracy = sum(diag(t))/sum(t)))
+  show(t)
+  
+  show('Confusion table of the test set')
+  t = table(model.pred.test,expected,dnn = c('Predicted','Original'))
+  show(c(Accuracy = sum(diag(t))/sum(t)))
+  show(t)
+  
+  return(model)
+}
+```
+
+## Discriminant analysis
+
+We try to classify male and female via LDA and QDA classification. We are taking a normality assumption on our data distribution and classifying them on this assumption. We impose as prior distribution of the label $\frac{1}{2}$ and $\frac{1}{2}$ as we assume that a random person taken from the street will be either a male or female, instead of estimating it from our slightly unbalanced dataset. The expectation vector and variance matrix of our assumed normal distributions used in the classification will be computed via a maximum likelihood estimation of our data.
+
+### LDA
+
+Let us first apply a linear discriminant analysis, that is, we assume that our variance matrices are diagonal and that the different features are independents.
+
+```{r}
+LDA = pipe(features.train, sexTracker.train, features.test, sexTracker.test, model = 'lda', metho = 'mle', prior = c(0.5,0.5))
+```
+
+### QDA 
+
+Now let us drop this diagonal assumption and let us see what we got.
+
+```{r}
+QDA = pipe(features.train, sexTracker.train, features.test, sexTracker.test, model = 'qda', metho = 'mle', prior = c(0.5,0.5))
+```
+
+### Comments
+
+We can see that our LDA classification provide better results. Theoretically the LDA classification is a particular case of the QDA classification and therefore it should be strictly worse. In our case as the variance estimation can be hard, LDA may perform better. That is probably what is happening.
+
+## Generative Naive Bayes classification
+
+We try to classify our data via naive bayes classifier. That is, we estimate via an Epanechnikov KDE the density of the male distribution of the features and separately the female distribution of the features. We evaluate our two distribution on a new observation. We decide that the new observation belongs to the class with the higher evaluation. This comparison is weighted by the a priori probability to be in one of the two classes, but as before we set this probability equally for the two classes.
+
+There are also two other parameters involved that we estimate via a grid search based on a $10$-fold cross validation repeated three times. They are a laplace smoothing parameters and a constant that modify multiplicatively the default bandwidth of the KDE. The possible values of this second parameter are concentrated around $1$ as otherwise a too low bandwidth will be selected, overfitting the data.
+
+```{r}
+grid = expand.grid(usekernel = c(TRUE), laplace = seq(0,1,length.out = 5), adjust = seq(0.9,1.1,length.out = 5))
+
+NaiveBayes = pipe(features.train, sexTracker.train, features.test, sexTracker.test, model = 'naive_bayes',tuning = TRUE, tuneGrid = grid, prior = c(0.5,0.5), kernel = 'epanechnikov')
+```
+
+Both the naive bayes classifier and the LDA assume that distributions are factorizable. The additional assumption of the LDA classifier is that the data have a normal distribution, where instead in the naive bayes there is no such assumption. It is reasonable to infer that, as the naive bayes gives worst result, the normality assumption is a good idea.
+
+## SVM classifier
+
+We try to classify our data via an SVM machine. That is, we look for the best manifold that divide in two groups our data depently on a particular kernel function. [see @Karatzoglou2004]
+
+We implement different version of it changing the kernel, and generating therefore different separating manifold. We will always look for the tuning parameter with a grid search.
+
+### Linear kernel
+
+Here we take as our linear kernel $<x|y>$ the classical scalar product in $\mathbb{R}^n$
+
+```{r}
+grid = expand.grid(C = seq(0.1,2,length.out = 10))
+
+LinearSVM = pipe(features.train, sexTracker.train, features.test, sexTracker.test, model = 'svmLinear', tuning = TRUE, tuneGrid = grid)
+```
+
+### Polynomial kernel
+
+In this case the polynomial kernel will be defined by $k_p(x,y) = (s<x|y> + \psi)^d$ where $s$ and $d$ are tuning parameters and $\psi$ a constant. 
+
+```{r}
+grid = expand.grid(degree = seq(3,5,length.out = 2), scale = seq(0.01,1,length.out = 5), C = seq(0.1,2,length.out = 5))
+
+PolySVM = pipe(features.train, sexTracker.train, features.test, sexTracker.test, model = 'svmPoly', tuning = TRUE, tuneGrid = grid)
+```
+
+### Radial kernel
+
+In this case the radial kernel will be defined by $k_r(x,y) = e^{-\sigma||x-y||^2}$ where $\sigma$ is a tuning parameter. 
+
+```{r}
+sigmas = sigest(features.train)[c(1,3)]
+grid = expand.grid(sigma = seq(sigmas[1],sigmas[2],length.out = 10), C = seq(0.5,1.5,length.out = 10))
+
+RadialSVM = pipe(features.train, sexTracker.train, features.test, sexTracker.test, model = 'svmRadial', tuning = TRUE, tuneGrid = grid)
+```
+
+### Comments
+
+As before the linear kernel performs better than the other, giving a strong insight that the data can effectively be separated by a hyperplane.
+
+# Features analysis
+
+Once we concluded how we can classify our data and which model better classify them, we can go a step further and try to understand between our features which are the most relevant. To do so we apply the LOCO (leave one covariate out) technique [see @LOCO, chapter 6]. Let us brifly illustrate it.
+
+Let us fix a classifier $c:\mathbb{R}^d\to\{1,2\}$ where in our case $d$ the number of features is $10$ and $1,2$ in the codomain stands for respectively female and male. We will define as $c_j:\mathbb{R}^{d-1}\to\{1,2\}$ the same classifier but that ignores the $j$-th feature. Let us fix a r.v. $(X,y)$ representing a new observation with $X$ the feature vector and $y$ the response value. We define $\Delta_j(X,y) = |y-c_j(X)|-|y-c(X)|$ a new r.v. and we will study its distribution. We see that $\Delta_j$ can assume three values: $-1$ if the $c_j$ predictor performs better than the old one, $0$ if they are equal, $1$ if the new one is worse than the old one. What we are looking for is if the mean $\theta_j$ of the new r.v. is above or belove $0$ to decide if the feature is improving or worsening our model. To do so we will use a hypothesis test $H_0: \theta_j \leq 0$. We may also be interested in asking ourself which of the feature is more important, to do so clearly we can just take the feature having the highest $\theta_j$, using as index of significance the hypothesis testing defined above.
+
+In our practical case we will use the train set to approximate $\hat \mu$ and $\hat {\mu_j}$ and the test set to estimate $$\hat \theta_j = \frac{\sum_{i\in\text{Test}}\Delta_j(X_i,y_i)}{\#\text{Test}}$$ Let us fix $\hat{s_j^2}$ the estimated variance and $z_{\alpha}$ the $1-\alpha$ quantile of the standard normal distribution. The Berry-Esseen Theorem assures us that we can perform our hypothesis testing at an $\alpha$ level rejecting $H_0$ if $\sqrt{\#\text{Test}}\hat{\theta_j}/\hat{s_j}>z_{\alpha}$.
+
+We will implement this test for the two model that gave us the better performance: the LDA and the linear SVM classifier.
+
+Let us prepare the functions to be used.
+
+```{r}
+LOCO = function(data, tracker, tester, expected, alpha, mu){
+  
+  tl = length(expected)
+  
+  rs = abs(c(expected) - c(predict(mu,tester)))
+  
+  deltas = matrix(nrow = tl, ncol = ncol(data))
+  for(j in 1:ncol(deltas)){
+    mu_j = train(x = data[,-j], y = tracker, method = mu$method, tuneGrid = mu$bestTune)
+    ls = abs(c(expected) - c(predict(mu_j,tester[,-j])))
+    deltas[,j] = ls - rs
+  }
+  
+  thetas = vector(mode = 'numeric', length = ncol(deltas))
+  for (j in 1:length(thetas)) thetas[j] = mean(deltas[,j])
+  sds = vector(mode = 'numeric', length = ncol(deltas))
+  for (j in 1:length(thetas)) sds[j] = sd(deltas[,j])
+  
+  rejectH_0 = sqrt(tl)*thetas>qnorm(1-alpha)*sds
+  
+  return(list(theta_j = thetas,significative = rejectH_0))
+}
+```
+
+## LDA feature importance
+
+```{r}
+LOCO(features.train, sexTracker.train, features.test, sexTracker.test, 0.05, LDA)
+```
+
+We can see that our first feature, corresponding to the mean of the sound pressure level.
+
+## Linear SVM feature importance
+
+```{r}
+LOCO(features.train, sexTracker.train, features.test, sexTracker.test, 0.05, LinearSVM)
+```
+
+We get more or less the same result as above, and exactly the same response once checked the significance level.
+
+## Comments
+
+In conclusion, it seems reasonable to believe that our first feature, the mean of the sound pressure level, is the most important of our features.
+
+# Conclusions
+
+In the end we have obtained good results with some models that have very high accuracy: more or less $90\%$. This confirms the results obtained from the other authors that it is possible to classify gender from the human voice. All the other authors used a different method to collect and process the data, this give strong insight that the voice carry a lot of information. In fact, as we saw a lot of its attributes carry information about the gender.
+
+As we saw our data is very well divided by hyperplanes, that must be because of how we process the data. We can suppose that other preprocessing method will give other shape and therefore favorite other regression method.
+
+We can finally conclude that the classification is generally possible and it is possible to get some very accurate results. In our case we found that the mean of the sound pressure level play a key role in the success of the classifications. Our results are opposite to the classic literature on the subject, where the pitch was the most important feature. Anyway, we must point at the fact that it does not mean that the pitch is not important: we never get negative values for the $\theta_j$, meaning that no feature are worsening the model.
+
+# References
