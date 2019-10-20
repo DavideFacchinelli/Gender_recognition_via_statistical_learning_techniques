@@ -1,0 +1,68 @@
+% Encoding: UTF-8
+
+@Article{Grd85,
+  author  = {George R. Doddington},
+  title   = {Speaker Recognition - Identifying People by their Voices},
+  journal = {Proceedings of the IEEE},
+  year    = {1985},
+  volume  = {73},
+  number  = {11},
+  pages   = {1651-1664},
+  month   = nov,
+  file    = {:C\:/Users/facch/Desktop/DS/S2/SL/ProjectFinal/Bibliography/G. R. Doddington, Speaker Recognition Identifying People.pdf:PDF},
+}
+
+@Article{RmkRfEm02,
+  author  = {Robert M. Krauss, Robin Feyberg, Ezequiel Morsella},
+  title   = {Inferring speakers' physical attributes from their voices},
+  journal = {Journal of Experimental Social Psychology},
+  year    = {2002},
+  volume  = {38},
+  pages   = {618-625},
+  file    = {:R. M. Krauss, R. Freyberg, E. Morsella, Inferring speakers' physical attributes from their voices.pdf:PDF},
+}
+
+@Article{DhkLck90,
+  author  = {Dennis H. Klatt, Laura C. Klatt},
+  title   = {Analysis, synthesis, and perception of voice quality variations among female and male talkers},
+  journal = {The Journal of the Acoustical Society of America},
+  year    = {1990},
+  volume  = {87},
+  number  = {2},
+  pages   = {820-857},
+  month   = feb,
+  file    = {:D. H. Klatt, L. C. Klatt, Analysis, Synthesis, and Perception of Voice Quality Variations Among Female and Male Talkers.pdf:PDF},
+}
+
+@Article{MlPb10,
+  author  = {Marianne Latinus, Pascal Belin},
+  title   = {Human voice perception},
+  journal = {Current Biology},
+  year    = {2010},
+  volume  = {21},
+  number  = {4},
+  pages   = {143-145},
+  month   = feb,
+  file    = {:M. Latinus, P. Belin, Human voice perception.pdf:PDF},
+}
+
+@Article{Karatzoglou2004,
+  author  = {Alexandros Karatzoglou, Alex Smola, Kurt Hornik, Achim Zeileis},
+  title   = {kernlab -- An S4 Package for Kernel Methods in R},
+  journal = {Journal of Statistical Software},
+  year    = {2004},
+  volume  = {11},
+  number  = {9},
+  pages   = {1--20},
+  file    = {:A. Karazoglu, A. Smola, K. Hornik, A. Zeileis, kernlab - An S4 Package for Kernel Methods in R.pdf:PDF},
+  url     = {http://www.jstatsoft.org/v11/i09/},
+}
+
+@Article{LOCO,
+  author  = {Jing Lei, Max G’Sell, Alessandro Rinaldo, Ryan J. Tibshirani, Larry Wasserman},
+  title   = {Distribution-Free Predictive Inference For Regression},
+  journal = {arXiv:1604.04173v2},
+  year    = {2017},
+}
+
+@Comment{jabref-meta: databaseType:bibtex;}
